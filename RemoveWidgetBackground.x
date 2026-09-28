@@ -1,10 +1,26 @@
 #import <UIKit/UIKit.h>
+#import <QuartzCore/QuartzCore.h>
 
 #import <HBLog.h>
+
+#import <stdint.h>
+
+/* compiler-rt compat for toolchains whose runtime lacks __isOSVersionAtLeast (used by @available). */
+int __isOSVersionAtLeast(int32_t major, int32_t minor, int32_t micro) {
+    NSOperatingSystemVersion version = [[NSProcessInfo processInfo] operatingSystemVersion];
+    NSInteger checks[3] = { (NSInteger)major, (NSInteger)minor, (NSInteger)micro };
+    NSInteger currents[3] = { version.majorVersion, version.minorVersion, version.patchVersion };
+    for (int i = 0; i < 3; i++) {
+        if (currents[i] != checks[i])
+            return currents[i] > checks[i];
+    }
+    return 1;
+}
 
 static BOOL kIsEnabled = YES;
 static BOOL kIsEnabledForSystemWidgets = YES;
 static BOOL kIsEnabledForMaterialView = YES;
+static BOOL kIsStrokeEnabled = YES;
 
 static BOOL kForceDarkMode = YES;
 
@@ -35,6 +51,12 @@ static void ReloadPrefs() {
         kIsEnabledForSystemWidgets = [settings[@"IsSystemWidgetsEnabled"] boolValue];
     } else {
         kIsEnabledForSystemWidgets = YES;
+    }
+
+    if (settings[@"IsStrokeEnabled"]) {
+        kIsStrokeEnabled = [settings[@"IsStrokeEnabled"] boolValue];
+    } else {
+        kIsStrokeEnabled = YES;
     }
 
     if (settings[@"IsMaterialViewEnabled"]) {
@@ -92,8 +114,8 @@ static void ReloadPrefs() {
     }
 
     HBLogDebug(@"ReloadPrefs: isEnabled=%d, isEnabledForSystemWidgets=%d, isEnabledForMaterialView=%d, "
-               @"forceDarkMode=%d, maxWidgetWidth=%.1f, maxWidgetHeight=%.1f, widgetBundleIdentifiers=%@",
-               kIsEnabled, kIsEnabledForSystemWidgets, kIsEnabledForMaterialView, kForceDarkMode, kMaxWidgetWidth,
+               @"forceDarkMode=%d, isStrokeEnabled=%d, maxWidgetWidth=%.1f, maxWidgetHeight=%.1f, widgetBundleIdentifiers=%@",
+               kIsEnabled, kIsEnabledForSystemWidgets, kIsEnabledForMaterialView, kForceDarkMode, kIsStrokeEnabled, kMaxWidgetWidth,
                kMaxWidgetHeight, kWidgetBundleIdentifiers);
 }
 
@@ -144,6 +166,83 @@ static void ReloadPrefs() {
 @property (nonatomic, copy) CHSWidget *widget; 
 @end
 
+/* Directional lens border, ported from Liquidify 1.3.8 (com.charlieleung.liquidify)
+   CCLiquidGlassView: a diagonal white gradient layer masked by a 0.65pt hairline
+   outline; per-stop alphas differ between light/dark appearance. */
+static NSString * const RWBLensBorderGradientName = @"rwb_lensBorderGradient";
+
+static void RWBApplyLensBorder(UIView *host) {
+    if (!kIsStrokeEnabled || host.window == nil) {
+        return;
+    }
+
+    CALayer *hostLayer = host.layer;
+    CAGradientLayer *gradient = nil;
+    for (CALayer *sublayer in hostLayer.sublayers) {
+        if ([sublayer isKindOfClass:%c(CAGradientLayer)] && [sublayer.name isEqualToString:RWBLensBorderGradientName]) {
+            gradient = (CAGradientLayer *)sublayer;
+            break;
+        }
+    }
+
+    if (!gradient) {
+        gradient = [CAGradientLayer layer];
+        gradient.name = RWBLensBorderGradientName;
+        gradient.startPoint = CGPointMake(0, 0);
+        gradient.endPoint = CGPointMake(1, 1);
+        gradient.locations = @[ @0.0, @0.18, @0.42, @0.58, @0.82, @1.0 ];
+
+        CALayer *outline = [CALayer layer];
+        outline.borderColor = UIColor.whiteColor.CGColor;
+        outline.borderWidth = 0.65;
+        gradient.mask = outline;
+
+        [hostLayer addSublayer:gradient];
+    }
+
+    if (hostLayer.sublayers.lastObject != gradient) {
+        [hostLayer addSublayer:gradient];
+    }
+
+    CALayer *outline = gradient.mask;
+
+    CGRect bounds = host.bounds;
+    CGFloat cornerRadius = hostLayer.cornerRadius;
+    if (cornerRadius <= 0) {
+        for (UIView *subview in host.subviews) {
+            cornerRadius = MAX(cornerRadius, subview.layer.cornerRadius);
+        }
+    }
+
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+
+    gradient.frame = bounds;
+    outline.frame = bounds;
+
+    CGFloat radius = MIN(CGRectGetWidth(bounds), CGRectGetHeight(bounds)) * 0.5;
+    radius = (radius > cornerRadius) ? cornerRadius : radius;
+    radius = MAX(radius, 0);
+    outline.cornerRadius = radius;
+    outline.cornerCurve = hostLayer.cornerCurve ?: kCACornerCurveCircular;
+    outline.maskedCorners = hostLayer.maskedCorners;
+
+    BOOL isDark = host.traitCollection.userInterfaceStyle == UIUserInterfaceStyleDark;
+    CGFloat topAlpha = isDark ? 0.62 : 0.82;
+    CGFloat midAlpha = isDark ? 0.34 : 0.48;
+    CGFloat bottomAlpha = isDark ? 0.015 : 0.025;
+    gradient.colors = @[
+        (__bridge id)[UIColor colorWithWhite:1.0 alpha:topAlpha].CGColor,
+        (__bridge id)[UIColor colorWithWhite:1.0 alpha:midAlpha].CGColor,
+        (__bridge id)[UIColor colorWithWhite:1.0 alpha:bottomAlpha].CGColor,
+        (__bridge id)[UIColor colorWithWhite:1.0 alpha:bottomAlpha].CGColor,
+        (__bridge id)[UIColor colorWithWhite:1.0 alpha:midAlpha].CGColor,
+        (__bridge id)[UIColor colorWithWhite:1.0 alpha:topAlpha].CGColor,
+    ];
+
+    [CATransaction commit];
+}
+
 %group RWBSpringBoard
 
 %hook CHUISAvocadoHostViewController
@@ -172,6 +271,17 @@ static void ReloadPrefs() {
     return %orig;
 }
 
+- (void)viewDidLayoutSubviews {
+    %orig;
+    CHSWidget *widget = self.widget;
+    if ([widget isKindOfClass:%c(CHSWidget)] &&
+        widget.extensionBundleIdentifier &&
+        [kWidgetBundleIdentifiers containsObject:widget.extensionBundleIdentifier])
+    {
+        RWBApplyLensBorder(self.view);
+    }
+}
+
 %end
 
 %hook SBHWidgetViewController
@@ -182,6 +292,13 @@ static void ReloadPrefs() {
     firstChild = self.view.subviews.firstObject;
     if ([firstChild isKindOfClass:%c(UIVisualEffectView)]) {
         [firstChild setAlpha:0];
+    }
+}
+
+- (void)viewDidLayoutSubviews {
+    %orig;
+    if (kIsEnabledForMaterialView) {
+        RWBApplyLensBorder(self.view);
     }
 }
 
@@ -286,6 +403,13 @@ static void ReloadPrefs() {
         if ([firstChild isKindOfClass:%c(MTMaterialView)]) {
             [firstChild setAlpha:0];
         }
+    }
+}
+
+- (void)viewDidLayoutSubviews {
+    %orig;
+    if (kIsEnabledForMaterialView) {
+        RWBApplyLensBorder(self.view);
     }
 }
 
