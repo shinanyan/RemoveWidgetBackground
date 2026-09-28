@@ -54,6 +54,20 @@
 		</dict>
 		<dict>
 			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>default</key>
+			<true/>
+			<key>defaults</key>
+			<string>com.82flex.removewidgetbgprefs</string>
+			<key>key</key>
+			<string>IsStrokeEnabled</string>
+			<key>label</key>
+			<string>Enable Lens Stroke</string>
+			<key>PostNotification</key>
+			<string>com.82flex.removewidgetbgprefs/saved</string>
+		</dict>
+		<dict>
+			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>label</key>
 			<string></string>
