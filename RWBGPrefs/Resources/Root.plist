@@ -135,6 +135,49 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>label</key>
+			<string>Transparency Reinforce</string>
+			<key>footerText</key>
+			<string>Exemptions for Force Dark Mode, provided by the Transparency Reinforce plugin. Widgets from the applications below keep their light appearance while everything else is forced dark.</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSLinkListCell</string>
+			<key>detail</key>
+			<string>ATLApplicationListMultiSelectionController</string>
+			<key>defaults</key>
+			<string>com.shinanyan.transparencyreinforceprefs</string>
+			<key>default</key>
+			<array/>
+			<key>key</key>
+			<string>AppIdentifiers</string>
+			<key>label</key>
+			<string>Light Mode Applications</string>
+			<key>PostNotification</key>
+			<string>com.shinanyan.transparencyreinforceprefs/saved</string>
+			<key>sections</key>
+			<array>
+				<dict>
+					<key>sectionType</key>
+					<string>Custom</string>
+					<key>sectionName</key>
+					<string></string>
+					<key>sectionPredicate</key>
+					<string>atl_isHidden == NO AND plugInKitPlugins.@count > 0 AND NOT applicationIdentifier LIKE 'com.apple.*'</string>
+				</dict>
+			</array>
+			<key>showIdentifiersAsSubtitle</key>
+			<true/>
+			<key>defaultApplicationSwitchValue</key>
+			<false/>
+			<key>useSearchBar</key>
+			<true/>
+			<key>hideSearchBarWhileScrolling</key>
+			<false/>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
 			<string>Maximum Element Width</string>
 		</dict>
 		<dict>

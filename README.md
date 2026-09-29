@@ -11,7 +11,7 @@ It works pretty well with our [Colorful Wallpaper X](https://havoc.app/package/c
 
 - Remove the background of some system widgets.
 - Remove the background of specified app widgets.
-- Force widgets to use dark mode.
+- Force widgets to use dark mode, with per-app light mode exemptions.
 - Draw a liquid-glass style lens stroke around widgets whose background was removed.
 
 Note that **not all** app widgets are supported: some apps may draw their widgets entirely.  

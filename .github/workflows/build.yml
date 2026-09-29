@@ -12,6 +12,11 @@ env:
   HOMEBREW_NO_AUTO_UPDATE: 1
   HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
 
+# The repository default is a read-only token, so the release step needs this
+# spelled out or it fails with 403 after a successful build.
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: macos-14
@@ -68,6 +73,7 @@ jobs:
         echo "VERSION=$VERSION" >> $GITHUB_ENV
 
     - name: Upload dSYMs
+      continue-on-error: true
       uses: actions/upload-artifact@v4
       with:
         name: symbols-${{ env.VERSION }}
@@ -75,6 +81,7 @@ jobs:
           ./packages/*.dSYM
 
     - name: Upload Packages
+      continue-on-error: true
       uses: actions/upload-artifact@v4
       with:
         name: packages-${{ env.VERSION }}

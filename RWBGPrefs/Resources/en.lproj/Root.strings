@@ -6,6 +6,9 @@
 "Enable Lens Stroke" = "Enable Lens Stroke";
 "Advanced Options" = "Advanced Options";
 "Force Dark Mode" = "Force Dark Mode";
+"Transparency Reinforce" = "Transparency Reinforce";
+"Light Mode Applications" = "Light Mode Applications";
+"Exemptions for Force Dark Mode, provided by the Transparency Reinforce plugin. Widgets from the applications below keep their light appearance while everything else is forced dark." = "Exemptions for Force Dark Mode, provided by the Transparency Reinforce plugin. Widgets from the applications below keep their light appearance while everything else is forced dark.";
 "Maximum Element Width" = "Maximum Element Width";
 "Maximum Element Height" = "Maximum Element Height";
 "Enabled Applications" = "Enabled Applications";

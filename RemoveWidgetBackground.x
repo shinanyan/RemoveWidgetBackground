@@ -29,19 +29,32 @@ static BOOL kForceDarkMode = YES;
 static CGFloat kMaxWidgetWidth = 150;
 static CGFloat kMaxWidgetHeight = 150;
 static NSSet<NSString *> *kWidgetBundleIdentifiers = nil;
+static NSSet<NSString *> *kLightModeBundleIdentifiers = nil;
 
 static BOOL gIsWidgetRenderer = NO;
 
-static void ReloadPrefs() {
-    static NSUserDefaults *prefs = nil;
-    if (gIsWidgetRenderer && !prefs) {
-        prefs = [[NSUserDefaults alloc] initWithSuiteName:@"/var/mobile/Library/Preferences/com.82flex.removewidgetbgprefs.plist"];
-    }
-    if (!prefs) {
-        prefs = [[NSUserDefaults alloc] initWithSuiteName:@"com.82flex.removewidgetbgprefs"];
-    }
+static NSString * const kRWBDomain = @"com.82flex.removewidgetbgprefs";
+static NSString * const kTransparencyReinforceDomain = @"com.shinanyan.transparencyreinforceprefs";
 
-    NSDictionary *settings = [prefs dictionaryRepresentation];
+/* The widget renderer runs sandboxed, where a preferences domain cannot be read
+   by name; the absolute plist path still is. */
+static NSUserDefaults *RWBUserDefaults(NSString *domain) {
+    if (gIsWidgetRenderer) {
+        NSString *path = [NSString stringWithFormat:@"/var/mobile/Library/Preferences/%@.plist", domain];
+        return [[NSUserDefaults alloc] initWithSuiteName:path];
+    }
+    return [[NSUserDefaults alloc] initWithSuiteName:domain];
+}
+
+/* The per-app light list lives in the Transparency Reinforce domain so that the
+   companion plugin and this tweak read one list instead of each forcing its own
+   appearance. */
+static BOOL RWBWidgetPrefersLight(NSString *extensionBundleIdentifier) {
+    return extensionBundleIdentifier != nil && [kLightModeBundleIdentifiers containsObject:extensionBundleIdentifier];
+}
+
+static void ReloadPrefs() {
+    NSDictionary *settings = [RWBUserDefaults(kRWBDomain) dictionaryRepresentation];
 
     if (settings[@"IsEnabled"]) {
         kIsEnabled = [settings[@"IsEnabled"] boolValue];
@@ -115,10 +128,14 @@ static void ReloadPrefs() {
         kWidgetBundleIdentifiers = [kWidgetBundleIdentifiers setByAddingObjectsFromArray:kSystemWidgetBundleIdentifiers];
     }
 
+    NSArray<NSString *> *lightModeBundleIdentifiers = [RWBUserDefaults(kTransparencyReinforceDomain) arrayForKey:@"WidgetBundleIdentifiers"];
+    kLightModeBundleIdentifiers = [NSSet setWithArray:lightModeBundleIdentifiers ?: @[]];
+
     HBLogDebug(@"ReloadPrefs: isEnabled=%d, isEnabledForSystemWidgets=%d, isEnabledForMaterialView=%d, "
-               @"forceDarkMode=%d, isStrokeEnabled=%d, maxWidgetWidth=%.1f, maxWidgetHeight=%.1f, widgetBundleIdentifiers=%@",
+               @"forceDarkMode=%d, isStrokeEnabled=%d, maxWidgetWidth=%.1f, maxWidgetHeight=%.1f, widgetBundleIdentifiers=%@, "
+               @"lightModeBundleIdentifiers=%@",
                kIsEnabled, kIsEnabledForSystemWidgets, kIsEnabledForMaterialView, kForceDarkMode, kIsStrokeEnabled, kMaxWidgetWidth,
-               kMaxWidgetHeight, kWidgetBundleIdentifiers);
+               kMaxWidgetHeight, kWidgetBundleIdentifiers, kLightModeBundleIdentifiers);
 }
 
 @interface CHSWidget : NSObject
@@ -356,6 +373,10 @@ static UIView *RWBWidgetRoundedContainer(UIView *root, CGFloat *outRadius) {
 
 - (unsigned long long)colorScheme {
     if (kForceDarkMode) {
+        CHSWidget *widget = self.widget;
+        if ([widget isKindOfClass:%c(CHSWidget)] && RWBWidgetPrefersLight(widget.extensionBundleIdentifier)) {
+            return 1;
+        }
         return 2;
     }
     return %orig;
@@ -402,6 +423,23 @@ static UIView *RWBWidgetRoundedContainer(UIView *root, CGFloat *outRadius) {
         [kWidgetBundleIdentifiers containsObject:widget.extensionBundleIdentifier])
     {
         return nil;
+    }
+    return %orig;
+}
+
+%end
+
+%hook CHUISWidgetScene
+
+/* Covered in the renderer as well, but the scene can also be instantiated on
+   this side, where the companion plugin used to be the one forcing the style. */
+- (unsigned long long)colorScheme {
+    if (kForceDarkMode) {
+        CHSWidget *widget = self.widget;
+        if ([widget isKindOfClass:%c(CHSWidget)] && RWBWidgetPrefersLight(widget.extensionBundleIdentifier)) {
+            return 1;
+        }
+        return 2;
     }
     return %orig;
 }
@@ -491,22 +529,21 @@ static UIView *RWBWidgetRoundedContainer(UIView *root, CGFloat *outRadius) {
 %property (nonatomic, strong) NSNumber *rwb_shouldHideBackground;
 
 - (UIWindow *)initWithWindowScene:(UIWindowScene *)scene {
+    NSString *extensionBundleIdentifier = nil;
     if ([scene isKindOfClass:%c(CHUISAvocadoWindowScene)]) {
-        CHUISAvocadoWindowScene *avocadoScene = (CHUISAvocadoWindowScene *)scene;
-        HBLogDebug(@"initWithWindowScene: %@", avocadoScene.widget.extensionBundleIdentifier);
-        if (avocadoScene.widget.extensionBundleIdentifier && [kWidgetBundleIdentifiers containsObject:avocadoScene.widget.extensionBundleIdentifier]) {
-            self.rwb_shouldHideBackground = @YES;
-        }
+        extensionBundleIdentifier = ((CHUISAvocadoWindowScene *)scene).widget.extensionBundleIdentifier;
     }
     else if ([scene isKindOfClass:%c(CHUISWidgetScene)]) {
-        CHUISWidgetScene *widgetScene = (CHUISWidgetScene *)scene;
-        HBLogDebug(@"initWithWindowScene: %@", widgetScene.widget.extensionBundleIdentifier);
-        if (widgetScene.widget.extensionBundleIdentifier && [kWidgetBundleIdentifiers containsObject:widgetScene.widget.extensionBundleIdentifier]) {
+        extensionBundleIdentifier = ((CHUISWidgetScene *)scene).widget.extensionBundleIdentifier;
+    }
+    if (extensionBundleIdentifier) {
+        HBLogDebug(@"initWithWindowScene: %@", extensionBundleIdentifier);
+        if ([kWidgetBundleIdentifiers containsObject:extensionBundleIdentifier]) {
             self.rwb_shouldHideBackground = @YES;
         }
     }
     UIWindow *window = %orig;
-    if (window) {
+    if (window && !RWBWidgetPrefersLight(extensionBundleIdentifier)) {
         [window setOverrideUserInterfaceStyle:UIUserInterfaceStyleDark];
     }
     return window;
@@ -518,6 +555,10 @@ static UIView *RWBWidgetRoundedContainer(UIView *root, CGFloat *outRadius) {
 
 - (unsigned long long)colorScheme {
     if (kForceDarkMode) {
+        CHSWidget *widget = self.widget;
+        if ([widget isKindOfClass:%c(CHSWidget)] && RWBWidgetPrefersLight(widget.extensionBundleIdentifier)) {
+            return 1;
+        }
         return 2;
     }
     return %orig;
@@ -685,6 +726,17 @@ static UIView *RWBWidgetRoundedContainer(UIView *root, CGFloat *outRadius) {
         (CFNotificationCallback)ReloadPrefs, 
         CFSTR("com.82flex.removewidgetbgprefs/saved"), 
         NULL, 
+        CFNotificationSuspensionBehaviorCoalesce
+    );
+
+    /* The light list is edited from this tweak's settings page but stored in the
+       Transparency Reinforce domain, so watch both notifications. */
+    CFNotificationCenterAddObserver(
+        CFNotificationCenterGetDarwinNotifyCenter(),
+        NULL,
+        (CFNotificationCallback)ReloadPrefs,
+        CFSTR("com.shinanyan.transparencyreinforceprefs/saved"),
+        NULL,
         CFNotificationSuspensionBehaviorCoalesce
     );
 
