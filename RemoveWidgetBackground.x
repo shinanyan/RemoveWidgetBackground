@@ -1,5 +1,6 @@
 #import <UIKit/UIKit.h>
 #import <QuartzCore/QuartzCore.h>
+#import <objc/runtime.h>
 
 #import <HBLog.h>
 
@@ -21,7 +22,7 @@ __attribute__((weak)) int __isOSVersionAtLeast(int32_t major, int32_t minor, int
 static BOOL kIsEnabled = YES;
 static BOOL kIsEnabledForSystemWidgets = YES;
 static BOOL kIsEnabledForMaterialView = YES;
-static BOOL kIsStrokeEnabled = YES;
+static BOOL kIsStrokeEnabled = NO;
 
 static BOOL kForceDarkMode = YES;
 
@@ -57,7 +58,7 @@ static void ReloadPrefs() {
     if (settings[@"IsStrokeEnabled"]) {
         kIsStrokeEnabled = [settings[@"IsStrokeEnabled"] boolValue];
     } else {
-        kIsStrokeEnabled = YES;
+        kIsStrokeEnabled = NO;
     }
 
     if (settings[@"IsMaterialViewEnabled"]) {
@@ -171,77 +172,87 @@ static void ReloadPrefs() {
    CCLiquidGlassView: a diagonal white gradient layer masked by a 0.65pt hairline
    outline; per-stop alphas differ between light/dark appearance. */
 static NSString * const RWBLensBorderGradientName = @"rwb_lensBorderGradient";
+static void * const RWBLensBorderIsDarkKey = &RWBLensBorderIsDarkKey;
 
 static void RWBApplyLensBorder(UIView *host) {
     if (!kIsStrokeEnabled || host.window == nil) {
         return;
     }
 
-    CALayer *hostLayer = host.layer;
-    CAGradientLayer *gradient = nil;
-    for (CALayer *sublayer in hostLayer.sublayers) {
-        if ([sublayer isKindOfClass:%c(CAGradientLayer)] && [sublayer.name isEqualToString:RWBLensBorderGradientName]) {
-            gradient = (CAGradientLayer *)sublayer;
-            break;
+    @try {
+        CALayer *hostLayer = host.layer;
+        CAGradientLayer *gradient = nil;
+        for (CALayer *sublayer in hostLayer.sublayers) {
+            if ([sublayer isKindOfClass:%c(CAGradientLayer)] && [sublayer.name isEqualToString:RWBLensBorderGradientName]) {
+                gradient = (CAGradientLayer *)sublayer;
+                break;
+            }
         }
-    }
 
-    if (!gradient) {
-        gradient = [CAGradientLayer layer];
-        gradient.name = RWBLensBorderGradientName;
-        gradient.startPoint = CGPointMake(0, 0);
-        gradient.endPoint = CGPointMake(1, 1);
-        gradient.locations = @[ @0.0, @0.18, @0.42, @0.58, @0.82, @1.0 ];
+        if (!gradient) {
+            gradient = [CAGradientLayer layer];
+            gradient.name = RWBLensBorderGradientName;
+            gradient.startPoint = CGPointMake(0, 0);
+            gradient.endPoint = CGPointMake(1, 1);
+            gradient.locations = @[ @0.0, @0.18, @0.42, @0.58, @0.82, @1.0 ];
+            gradient.zPosition = 9999;
 
-        CALayer *outline = [CALayer layer];
-        outline.borderColor = UIColor.whiteColor.CGColor;
-        outline.borderWidth = 0.65;
-        gradient.mask = outline;
+            CALayer *outline = [CALayer layer];
+            outline.borderColor = UIColor.whiteColor.CGColor;
+            outline.borderWidth = 0.65;
+            gradient.mask = outline;
 
-        [hostLayer addSublayer:gradient];
-    }
-
-    if (hostLayer.sublayers.lastObject != gradient) {
-        [hostLayer addSublayer:gradient];
-    }
-
-    CALayer *outline = gradient.mask;
-
-    CGRect bounds = host.bounds;
-    CGFloat cornerRadius = hostLayer.cornerRadius;
-    if (cornerRadius <= 0) {
-        for (UIView *subview in host.subviews) {
-            cornerRadius = MAX(cornerRadius, subview.layer.cornerRadius);
+            [hostLayer addSublayer:gradient];
         }
+
+        CALayer *outline = gradient.mask;
+
+        CGRect bounds = host.bounds;
+        BOOL isDark = host.traitCollection.userInterfaceStyle == UIUserInterfaceStyleDark;
+
+        NSNumber *lastIsDark = objc_getAssociatedObject(gradient, RWBLensBorderIsDarkKey);
+        if (lastIsDark != nil && lastIsDark.boolValue == isDark && CGRectEqualToRect(gradient.frame, bounds)) {
+            return;
+        }
+        objc_setAssociatedObject(gradient, RWBLensBorderIsDarkKey, @(isDark), OBJC_ASSOCIATION_RETAIN);
+
+        CGFloat cornerRadius = hostLayer.cornerRadius;
+        if (cornerRadius <= 0) {
+            for (UIView *subview in host.subviews) {
+                cornerRadius = MAX(cornerRadius, subview.layer.cornerRadius);
+            }
+        }
+
+        [CATransaction begin];
+        [CATransaction setDisableActions:YES];
+
+        gradient.frame = bounds;
+        outline.frame = bounds;
+
+        CGFloat radius = MIN(CGRectGetWidth(bounds), CGRectGetHeight(bounds)) * 0.5;
+        radius = (radius > cornerRadius) ? cornerRadius : radius;
+        radius = MAX(radius, 0);
+        outline.cornerRadius = radius;
+        outline.cornerCurve = hostLayer.cornerCurve ?: kCACornerCurveCircular;
+        outline.maskedCorners = hostLayer.maskedCorners;
+
+        CGFloat topAlpha = isDark ? 0.62 : 0.82;
+        CGFloat midAlpha = isDark ? 0.34 : 0.48;
+        CGFloat bottomAlpha = isDark ? 0.015 : 0.025;
+        gradient.colors = @[
+            (__bridge id)[UIColor colorWithWhite:1.0 alpha:topAlpha].CGColor,
+            (__bridge id)[UIColor colorWithWhite:1.0 alpha:midAlpha].CGColor,
+            (__bridge id)[UIColor colorWithWhite:1.0 alpha:bottomAlpha].CGColor,
+            (__bridge id)[UIColor colorWithWhite:1.0 alpha:bottomAlpha].CGColor,
+            (__bridge id)[UIColor colorWithWhite:1.0 alpha:midAlpha].CGColor,
+            (__bridge id)[UIColor colorWithWhite:1.0 alpha:topAlpha].CGColor,
+        ];
+
+        [CATransaction commit];
     }
-
-    [CATransaction begin];
-    [CATransaction setDisableActions:YES];
-
-    gradient.frame = bounds;
-    outline.frame = bounds;
-
-    CGFloat radius = MIN(CGRectGetWidth(bounds), CGRectGetHeight(bounds)) * 0.5;
-    radius = (radius > cornerRadius) ? cornerRadius : radius;
-    radius = MAX(radius, 0);
-    outline.cornerRadius = radius;
-    outline.cornerCurve = hostLayer.cornerCurve ?: kCACornerCurveCircular;
-    outline.maskedCorners = hostLayer.maskedCorners;
-
-    BOOL isDark = host.traitCollection.userInterfaceStyle == UIUserInterfaceStyleDark;
-    CGFloat topAlpha = isDark ? 0.62 : 0.82;
-    CGFloat midAlpha = isDark ? 0.34 : 0.48;
-    CGFloat bottomAlpha = isDark ? 0.015 : 0.025;
-    gradient.colors = @[
-        (__bridge id)[UIColor colorWithWhite:1.0 alpha:topAlpha].CGColor,
-        (__bridge id)[UIColor colorWithWhite:1.0 alpha:midAlpha].CGColor,
-        (__bridge id)[UIColor colorWithWhite:1.0 alpha:bottomAlpha].CGColor,
-        (__bridge id)[UIColor colorWithWhite:1.0 alpha:bottomAlpha].CGColor,
-        (__bridge id)[UIColor colorWithWhite:1.0 alpha:midAlpha].CGColor,
-        (__bridge id)[UIColor colorWithWhite:1.0 alpha:topAlpha].CGColor,
-    ];
-
-    [CATransaction commit];
+    @catch (NSException *exception) {
+        HBLogDebug(@"RWB lens stroke error: %@", exception);
+    }
 }
 
 %group RWBSpringBoard
@@ -293,13 +304,6 @@ static void RWBApplyLensBorder(UIView *host) {
     firstChild = self.view.subviews.firstObject;
     if ([firstChild isKindOfClass:%c(UIVisualEffectView)]) {
         [firstChild setAlpha:0];
-    }
-}
-
-- (void)viewDidLayoutSubviews {
-    %orig;
-    if (kIsEnabledForMaterialView) {
-        RWBApplyLensBorder(self.view);
     }
 }
 
@@ -404,13 +408,6 @@ static void RWBApplyLensBorder(UIView *host) {
         if ([firstChild isKindOfClass:%c(MTMaterialView)]) {
             [firstChild setAlpha:0];
         }
-    }
-}
-
-- (void)viewDidLayoutSubviews {
-    %orig;
-    if (kIsEnabledForMaterialView) {
-        RWBApplyLensBorder(self.view);
     }
 }
 
