@@ -5,8 +5,9 @@
 
 #import <stdint.h>
 
-/* compiler-rt compat for toolchains whose runtime lacks __isOSVersionAtLeast (used by @available). */
-int __isOSVersionAtLeast(int32_t major, int32_t minor, int32_t micro) {
+/* compiler-rt compat for toolchains whose runtime lacks __isOSVersionAtLeast (used by @available).
+   Weak so that newer toolchains shipping the real one win. */
+__attribute__((weak)) int __isOSVersionAtLeast(int32_t major, int32_t minor, int32_t micro) {
     NSOperatingSystemVersion version = [[NSProcessInfo processInfo] operatingSystemVersion];
     NSInteger checks[3] = { (NSInteger)major, (NSInteger)minor, (NSInteger)micro };
     NSInteger currents[3] = { version.majorVersion, version.minorVersion, version.patchVersion };
