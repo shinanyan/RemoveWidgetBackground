@@ -125,6 +125,10 @@ static void ReloadPrefs() {
 @property (nonatomic, copy, readonly) NSString *extensionBundleIdentifier;
 @end
 
+@interface CHSWidgetMetrics : NSObject
+@property (nonatomic, readonly) double cornerRadius;
+@end
+
 @interface CHUISWidgetScene : UIWindowScene
 @property (nonatomic, copy, readonly) CHSWidget *widget;
 @end
@@ -165,7 +169,9 @@ static void ReloadPrefs() {
 @end
 
 @interface CHUISAvocadoHostViewController : UIViewController
-@property (nonatomic, copy) CHSWidget *widget; 
+@property (nonatomic, copy, readonly) CHSWidget *widget;
+@property (nonatomic, readonly) CHSWidgetMetrics *metrics;
+- (double)_effectiveCornerRadius;
 @end
 
 /* Directional lens border, ported from Liquidify 1.3.8 (com.charlieleung.liquidify)
@@ -174,7 +180,7 @@ static void ReloadPrefs() {
 static NSString * const RWBLensBorderGradientName = @"rwb_lensBorderGradient";
 static void * const RWBLensBorderIsDarkKey = &RWBLensBorderIsDarkKey;
 
-static void RWBApplyLensBorder(UIView *host) {
+static void RWBApplyLensBorder(UIView *host, CGFloat cornerRadius) {
     if (!kIsStrokeEnabled || host.window == nil) {
         return;
     }
@@ -210,18 +216,17 @@ static void RWBApplyLensBorder(UIView *host) {
         CGRect bounds = host.bounds;
         BOOL isDark = host.traitCollection.userInterfaceStyle == UIUserInterfaceStyleDark;
 
+        CGFloat radius = MIN(CGRectGetWidth(bounds), CGRectGetHeight(bounds)) * 0.5;
+        radius = (radius > cornerRadius) ? cornerRadius : radius;
+        radius = MAX(radius, 0);
+
         NSNumber *lastIsDark = objc_getAssociatedObject(gradient, RWBLensBorderIsDarkKey);
-        if (lastIsDark != nil && lastIsDark.boolValue == isDark && CGRectEqualToRect(gradient.frame, bounds)) {
+        if (lastIsDark != nil && lastIsDark.boolValue == isDark
+            && CGRectEqualToRect(gradient.frame, bounds)
+            && outline.cornerRadius == radius) {
             return;
         }
         objc_setAssociatedObject(gradient, RWBLensBorderIsDarkKey, @(isDark), OBJC_ASSOCIATION_RETAIN);
-
-        CGFloat cornerRadius = hostLayer.cornerRadius;
-        if (cornerRadius <= 0) {
-            for (UIView *subview in host.subviews) {
-                cornerRadius = MAX(cornerRadius, subview.layer.cornerRadius);
-            }
-        }
 
         [CATransaction begin];
         [CATransaction setDisableActions:YES];
@@ -229,11 +234,8 @@ static void RWBApplyLensBorder(UIView *host) {
         gradient.frame = bounds;
         outline.frame = bounds;
 
-        CGFloat radius = MIN(CGRectGetWidth(bounds), CGRectGetHeight(bounds)) * 0.5;
-        radius = (radius > cornerRadius) ? cornerRadius : radius;
-        radius = MAX(radius, 0);
         outline.cornerRadius = radius;
-        outline.cornerCurve = hostLayer.cornerCurve ?: kCACornerCurveCircular;
+        outline.cornerCurve = hostLayer.cornerCurve ?: kCACornerCurveContinuous;
         outline.maskedCorners = hostLayer.maskedCorners;
 
         CGFloat topAlpha = isDark ? 0.62 : 0.82;
@@ -290,7 +292,17 @@ static void RWBApplyLensBorder(UIView *host) {
         widget.extensionBundleIdentifier &&
         [kWidgetBundleIdentifiers containsObject:widget.extensionBundleIdentifier])
     {
-        RWBApplyLensBorder(self.view);
+        CGFloat cornerRadius = 0;
+        if ([self respondsToSelector:@selector(_effectiveCornerRadius)]) {
+            cornerRadius = self._effectiveCornerRadius;
+        }
+        if (cornerRadius <= 0 && [self respondsToSelector:@selector(metrics)]) {
+            cornerRadius = self.metrics.cornerRadius;
+        }
+        if (cornerRadius <= 0) {
+            cornerRadius = 23.0;
+        }
+        RWBApplyLensBorder(self.view, cornerRadius);
     }
 }
 
