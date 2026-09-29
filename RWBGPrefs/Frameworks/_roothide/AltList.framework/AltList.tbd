@@ -2,7 +2,7 @@
 tbd-version:     4
 targets:         [ arm64-ios, arm64e-ios ]
 flags:           [ flat_namespace ]
-install-name:    "/Library/Frameworks/AltList.framework/AltList"
+install-name:    "@loader_path/.jbroot/Library/Frameworks/AltList.framework/AltList"
 current-version: 0
 compatibility-version: 0
 exports:

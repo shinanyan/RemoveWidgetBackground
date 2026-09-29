@@ -33,6 +33,14 @@ RWBGPrefs_FRAMEWORKS += UIKit
 RWBGPrefs_EXTRA_FRAMEWORKS += AltList
 RWBGPrefs_PRIVATE_FRAMEWORKS += CoreServices
 RWBGPrefs_PRIVATE_FRAMEWORKS += Preferences
+
+ifeq ($(THEOS_PACKAGE_SCHEME),roothide)
+# AltList lives under the jbroot on roothide, so the absolute install path
+# never resolves inside Settings; weak-link the framework so the bundle
+# still loads without it.
+RWBGPrefs_LDFLAGS += -weak_framework AltList
+RWBGPrefs_EXTRA_FRAMEWORKS =
+endif
 RWBGPrefs_INSTALL_PATH += /Library/PreferenceBundles
 
 include $(THEOS_MAKE_PATH)/bundle.mk
