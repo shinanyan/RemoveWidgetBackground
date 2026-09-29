@@ -6,9 +6,6 @@
 "Enable Lens Stroke" = "启用描边";
 "Advanced Options" = "高级选项";
 "Force Dark Mode" = "强制深色模式";
-"Transparency Reinforce" = "强化透明";
-"Light Mode Applications" = "浅色模式应用";
-"Exemptions for Force Dark Mode, provided by the Transparency Reinforce plugin. Widgets from the applications below keep their light appearance while everything else is forced dark." = "由「强化透明」插件提供的强制深色模式例外名单。下列应用的小组件保持浅色外观，其余小组件仍强制深色。";
 "Maximum Element Width" = "最大元素宽度";
 "Maximum Element Height" = "最大元素高度";
 "Enabled Applications" = "启用的应用程序";

@@ -109,14 +109,10 @@ void RWBGBatchKillAll(NSArray<NSString *> *processNames, BOOL softly) {
     return _specifiers;
 }
 
-/* The widget list is stored in the domain the specifier declares, so that the
-   Transparency Reinforce row lands in its own domain instead of this bundle's. */
 - (void)setPreferenceValue:(id)value specifier:(PSSpecifier *)specifier {
     [super setPreferenceValue:value specifier:specifier];
     if ([specifier.properties[@"key"] isEqualToString:@"AppIdentifiers"]) {
-        if (![value isKindOfClass:[NSArray class]]) {
-            return;
-        }
+        NSAssert([value isKindOfClass:[NSArray class]], @"value is not an array");
 
         NSMutableArray<NSString *> *plugInIdentifiers = [NSMutableArray new];
         for (NSString *bundleIdentifier in value) {
@@ -136,14 +132,8 @@ void RWBGBatchKillAll(NSArray<NSString *> *processNames, BOOL softly) {
                                                                       edit:nil];
 
         [stubSpecifier setProperty:@"WidgetBundleIdentifiers" forKey:@"key"];
-        [stubSpecifier setProperty:specifier.properties[@"defaults"] ?: @"com.82flex.removewidgetbgprefs" forKey:@"defaults"];
-        /* Only the row that asks for a notification gets one: the enabled
-           applications row declares none, and a nil property is not worth
-           trusting this framework to tolerate. */
-        NSString *notification = specifier.properties[@"PostNotification"];
-        if (notification) {
-            [stubSpecifier setProperty:notification forKey:@"PostNotification"];
-        }
+        [stubSpecifier setProperty:@"com.82flex.removewidgetbgprefs" forKey:@"defaults"];
+        [stubSpecifier setProperty:@"com.82flex.removewidgetbgprefs/saved" forKey:@"PostNotification"];
 
         [super setPreferenceValue:plugInIdentifiers specifier:stubSpecifier];
     }
@@ -166,15 +156,17 @@ void RWBGBatchKillAll(NSArray<NSString *> *processNames, BOOL softly) {
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
-    PSSpecifier *specifier = [self specifierAtIndexPath:indexPath];
-    /* Keyed off the specifier, not a section index: adding a group used to shift
-       the sections and turn the destructive red back into plain tint. */
-    if ([[specifier propertyForKey:@"cell"] isEqualToString:@"PSButtonCell"] &&
-        [[specifier propertyForKey:@"isDestructive"] boolValue]) {
-        UITableViewCell *cell = [super tableView:tableView cellForRowAtIndexPath:indexPath];
-        cell.textLabel.textColor = [UIColor systemRedColor];
-        cell.textLabel.highlightedTextColor = [UIColor systemRedColor];
-        return cell;
+    if (indexPath.section == 5) {
+        PSSpecifier *specifier = [self specifierAtIndexPath:indexPath];
+        NSString *key = [specifier propertyForKey:@"cell"];
+        if ([key isEqualToString:@"PSButtonCell"]) {
+            UITableViewCell *cell = [super tableView:tableView cellForRowAtIndexPath:indexPath];
+            NSNumber *isDestructiveValue = [specifier propertyForKey:@"isDestructive"];
+            BOOL isDestructive = [isDestructiveValue boolValue];
+            cell.textLabel.textColor = isDestructive ? [UIColor systemRedColor] : [UIColor systemBlueColor];
+            cell.textLabel.highlightedTextColor = isDestructive ? [UIColor systemRedColor] : [UIColor systemBlueColor];
+            return cell;
+        }
     }
     return [super tableView:tableView cellForRowAtIndexPath:indexPath];
 }
