@@ -185,6 +185,10 @@ static void RWBApplyLensBorder(UIView *host, CGFloat cornerRadius) {
         return;
     }
 
+    if (cornerRadius <= 0) {
+        cornerRadius = 23.0;
+    }
+
     @try {
         CALayer *hostLayer = host.layer;
         CAGradientLayer *gradient = nil;
@@ -257,6 +261,36 @@ static void RWBApplyLensBorder(UIView *host, CGFloat cornerRadius) {
     }
 }
 
+/* The system rounds widgets through container views; pick the largest
+   widget-scale rounded container inside an icon view, if any. */
+static UIView *RWBWidgetRoundedContainer(UIView *root, CGFloat *outRadius) {
+    UIView *best = nil;
+    CGFloat bestRadius = 0;
+    CGFloat minimumWidth = root.bounds.size.width * 0.5;
+    for (UIView *child in root.subviews) {
+        if (child.bounds.size.width < minimumWidth) {
+            continue;
+        }
+        CGFloat radius = child.layer.cornerRadius;
+        if (radius > bestRadius) {
+            bestRadius = radius;
+            best = child;
+        }
+        for (UIView *grandchild in child.subviews) {
+            if (grandchild.bounds.size.width < minimumWidth) {
+                continue;
+            }
+            radius = grandchild.layer.cornerRadius;
+            if (radius > bestRadius) {
+                bestRadius = radius;
+                best = grandchild;
+            }
+        }
+    }
+    *outRadius = bestRadius;
+    return best;
+}
+
 %group RWBSpringBoard
 
 %hook CHUISAvocadoHostViewController
@@ -298,9 +332,6 @@ static void RWBApplyLensBorder(UIView *host, CGFloat cornerRadius) {
         }
         if (cornerRadius <= 0 && [self respondsToSelector:@selector(metrics)]) {
             cornerRadius = self.metrics.cornerRadius;
-        }
-        if (cornerRadius <= 0) {
-            cornerRadius = 23.0;
         }
         RWBApplyLensBorder(self.view, cornerRadius);
     }
@@ -379,6 +410,24 @@ static void RWBApplyLensBorder(UIView *host, CGFloat cornerRadius) {
 
 %hook SBIconView
 
+- (void)layoutSubviews {
+    %orig;
+
+    if (!kIsStrokeEnabled) {
+        return;
+    }
+    if (!self.icon || ![self.icon isKindOfClass:%c(SBWidgetIcon)]) {
+        return;
+    }
+
+    CGFloat radius = 0;
+    UIView *host = RWBWidgetRoundedContainer(self, &radius);
+    if (host == nil) {
+        host = self;
+    }
+    RWBApplyLensBorder(host, radius);
+}
+
 - (double)iconLabelAlpha {
     if (self.icon && [self.icon isKindOfClass:%c(SBWidgetIcon)]) {
         return 0;
@@ -406,6 +455,14 @@ static void RWBApplyLensBorder(UIView *host, CGFloat cornerRadius) {
         if ([firstChild isKindOfClass:%c(MTMaterialView)]) {
             [firstChild setAlpha:0];
         }
+    }
+}
+
+- (void)viewDidLayoutSubviews {
+    %orig;
+    CGFloat radius = self.view.layer.cornerRadius;
+    if (radius > 0) {
+        RWBApplyLensBorder(self.view, radius);
     }
 }
 
