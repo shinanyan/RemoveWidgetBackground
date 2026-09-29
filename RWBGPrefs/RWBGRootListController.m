@@ -136,8 +136,14 @@ void RWBGBatchKillAll(NSArray<NSString *> *processNames, BOOL softly) {
                                                                       edit:nil];
 
         [stubSpecifier setProperty:@"WidgetBundleIdentifiers" forKey:@"key"];
-        [stubSpecifier setProperty:specifier.properties[@"defaults"] forKey:@"defaults"];
-        [stubSpecifier setProperty:specifier.properties[@"PostNotification"] forKey:@"PostNotification"];
+        [stubSpecifier setProperty:specifier.properties[@"defaults"] ?: @"com.82flex.removewidgetbgprefs" forKey:@"defaults"];
+        /* Only the row that asks for a notification gets one: the enabled
+           applications row declares none, and a nil property is not worth
+           trusting this framework to tolerate. */
+        NSString *notification = specifier.properties[@"PostNotification"];
+        if (notification) {
+            [stubSpecifier setProperty:notification forKey:@"PostNotification"];
+        }
 
         [super setPreferenceValue:plugInIdentifiers specifier:stubSpecifier];
     }
